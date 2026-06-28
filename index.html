@@ -7,7 +7,7 @@
       content="A code-based Chen ER diagram generator. Write text to generate Chen notation ER diagrams online. No drag-and-drop, free and open source." />
 <meta name="google-site-verification" content="sgThf8gCfTN-fJIaLhY_0dcTRcwYE_8rnmvBj2APn3U" />
 <title>Chen ER Diagram Generator</title>
-<link rel="stylesheet" href="style.css?t=6">
+<link rel="stylesheet" href="style.css?t=7">
 </head>
 <body>
 <header>
@@ -20,8 +20,16 @@
             <h2>DSL Input</h2>
             <textarea id="dslInput"></textarea>
             <button id="compileBtn">Compile</button>
+            <button id="relayoutBtn">Reorganizar</button>
             <button id="downloadBtn">Download SVG</button>
             <button id="downloadPngBtn">Download PNG</button>
+
+            <div class="layout-controls">
+                <label>Espaçamento
+                    <input type="range" id="spacingRange" min="0.5" max="2.2" step="0.1" value="1">
+                </label>
+                <span class="hint">Arraste os nós para ajustar · roda do mouse = zoom · arraste o fundo = mover</span>
+            </div>
         </section>
 
         <section class="preview-section">
@@ -154,18 +162,12 @@ HasEnrollment Enrollment (1) TOTAL -- (1) TOTAL Student
     </section>
 
     <section class="credits">
-        <p>Powered by <a href="https://graphviz.org/">Graphviz</a> (WASM)</p>
+        <p>Diagramas Chen em SVG nativo · 100% no navegador, sem dependências externas</p>
     </section>
 </main>
 
-<!-- Load Graphviz WASM via ES module -->
-<script type="module">
-  import { Graphviz } from "https://cdn.jsdelivr.net/npm/@hpcc-js/wasm-graphviz/dist/index.min.js";
-  Graphviz.wasmFolder = "https://cdn.jsdelivr.net/npm/@hpcc-js/wasm-graphviz/dist/";
-  window.GraphvizModule = Graphviz;
-</script>
-<script src="parser.js?t=6"></script>
-<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom/dist/svg-pan-zoom.min.js"></script>
-<script src="app.js?t=6"></script>
+<script src="parser.js?t=9"></script>
+<script src="chen-render.js?t=9"></script>
+<script src="app.js?t=9"></script>
 </body>
 </html>

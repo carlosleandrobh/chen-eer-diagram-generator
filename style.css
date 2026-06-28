@@ -48,13 +48,36 @@ button {
     cursor: pointer;
 }
 
+/* Layout controls row */
+.layout-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+    font-size: 13px;
+}
+
+.layout-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.layout-controls .hint {
+    color: #666;
+    font-size: 12px;
+}
+
 #svgContainer {
     flex: 1;
     border: 1px solid #ccc;
     border-radius: 4px;
-    overflow: hidden;   /* pan-zoom handles scrolling internally */
-    position: relative; /* needed for svg-pan-zoom control icons */
-    background: #fff;
+    overflow: hidden;        /* we pan/zoom inside the SVG */
+    position: relative;
+    background: #fbfcfe;
+    touch-action: none;      /* let pointer events drive pan/drag */
+    cursor: grab;
 }
 
 /* The SVG fills the container; JS sets width/height to 100% inline */
