@@ -50,8 +50,7 @@ function parseDSL(dsl) {
     // -------------------------
     let dot = `graph ER {
 layout=neato;
-overlap=scale;
-overlap_scaling=0.003;
+overlap=true;
 splines=true;
 K=0.4;
 epsilon=0.01;

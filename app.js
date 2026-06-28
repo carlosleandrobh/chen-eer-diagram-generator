@@ -54,6 +54,19 @@ async function renderSVG(dot) {
         const svgDoc = parser.parseFromString(svgStr, "image/svg+xml");
         const svgElem = svgDoc.documentElement;
 
+        // ── KEY FIX ──────────────────────────────────────────────────────
+        // Graphviz emits fixed width/height in points (e.g. "2000pt").
+        // When svg-pan-zoom tries to fit() a 2000pt canvas into a 400px
+        // container the zoom factor becomes ~0.2 and every node appears
+        // tiny.  Removing the fixed dimensions lets the SVG fill its
+        // parent via CSS (100% / 100%) while the viewBox keeps the
+        // internal coordinates intact so pan-zoom can work correctly.
+        // ─────────────────────────────────────────────────────────────────
+        svgElem.removeAttribute("width");
+        svgElem.removeAttribute("height");
+        svgElem.style.width  = "100%";
+        svgElem.style.height = "100%";
+
         // Clear previous content and append SVG node
         svgContainer.innerHTML = "";
         svgContainer.appendChild(svgElem);
@@ -69,7 +82,9 @@ async function renderSVG(dot) {
             zoomEnabled: true,
             controlIconsEnabled: true,
             fit: true,
-            center: true
+            center: true,
+            minZoom: 0.05,
+            maxZoom: 20
         });
     } catch (err) {
         svgContainer.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
@@ -107,36 +122,70 @@ downloadBtn.addEventListener('click', () => {
 });
 
 // -------------------------
-// Download PNG (use original SVG, not modified)
+// Download PNG (render original SVG at proper resolution)
 // -------------------------
 downloadPngBtn.addEventListener('click', () => {
     if (!originalSvgString) return alert('No diagram to export');
 
-    const img = new Image();
-    const svgBlob = new Blob([originalSvgString], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
+    // Parse the original SVG to read its viewBox dimensions
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(originalSvgString, "image/svg+xml");
+    const svgElem = svgDoc.documentElement;
 
+    // Get viewBox or fall back to width/height attributes
+    let vbWidth, vbHeight;
+    const vb = svgElem.getAttribute("viewBox");
+    if (vb) {
+        const parts = vb.trim().split(/[\s,]+/);
+        vbWidth  = parseFloat(parts[2]);
+        vbHeight = parseFloat(parts[3]);
+    } else {
+        // Strip "pt" or "px" units from width/height
+        vbWidth  = parseFloat(svgElem.getAttribute("width")  || "800");
+        vbHeight = parseFloat(svgElem.getAttribute("height") || "600");
+    }
+
+    // Target a high-resolution export (2× the viewBox, capped at 4096)
+    const MAX_PX = 4096;
+    const scale  = Math.min(2, MAX_PX / Math.max(vbWidth, vbHeight));
+    const canvasW = Math.round(vbWidth  * scale);
+    const canvasH = Math.round(vbHeight * scale);
+
+    // Build an SVG blob with explicit width/height for correct rasterisation
+    const exportSvg = originalSvgString
+        .replace(/<svg([^>]*)width="[^"]*"/, `<svg$1width="${canvasW}"`)
+        .replace(/<svg([^>]*)height="[^"]*"/, `<svg$1height="${canvasH}"`)
+        // If width/height attrs were missing, inject them
+        .replace(/^(<svg(?![^>]*\bwidth=)[^>]*)>/, `$1 width="${canvasW}" height="${canvasH}">`);
+
+    const blob = new Blob([exportSvg], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+
+    const img = new Image();
     img.onload = () => {
         const canvas = document.createElement('canvas');
-
-        // Scale for better resolution
-        const scale = 2;
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
+        canvas.width  = canvasW;
+        canvas.height = canvasH;
 
         const ctx = canvas.getContext('2d');
-        ctx.scale(scale, scale);
-        ctx.drawImage(img, 0, 0);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+        ctx.drawImage(img, 0, 0, canvasW, canvasH);
 
         URL.revokeObjectURL(url);
 
         const pngUrl = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = pngUrl;
+        const link   = document.createElement('a');
+        link.href     = pngUrl;
         link.download = 'chen_er_diagram.png';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    };
+
+    img.onerror = () => {
+        URL.revokeObjectURL(url);
+        alert('Failed to render PNG. Try downloading the SVG instead.');
     };
 
     img.src = url;
