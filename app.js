@@ -114,23 +114,30 @@ async function renderSVG(dot) {
             panZoomInstance = null;
         }
 
-        // Give the browser a frame to paint the SVG at its final size
-        // before svg-pan-zoom measures it.
-        requestAnimationFrame(() => {
+        // Give the browser 100 ms to paint the SVG at its final CSS size
+        // before svg-pan-zoom measures it.  requestAnimationFrame runs
+        // before the next paint and often gets a stale bounding box.
+        setTimeout(() => {
             try {
+                if (panZoomInstance) {
+                    try { panZoomInstance.destroy(); } catch (_) {}
+                    panZoomInstance = null;
+                }
                 panZoomInstance = svgPanZoom(svgElem, {
-                    zoomEnabled:         true,
-                    controlIconsEnabled: true,
-                    fit:                 true,
-                    center:              true,
-                    minZoom:             0.02,
-                    maxZoom:             50,
+                    zoomEnabled:          true,
+                    controlIconsEnabled:  true,
+                    fit:                  false,   // we call fit manually below
+                    center:               false,
+                    minZoom:              0.02,
+                    maxZoom:              50,
                     zoomScaleSensitivity: 0.3,
                 });
+                panZoomInstance.fit();
+                panZoomInstance.center();
             } catch (e) {
                 console.warn("svg-pan-zoom init failed:", e);
             }
-        });
+        }, 100);
 
     } catch (err) {
         svgContainer.innerHTML = `<p style="color:red;padding:1rem;">Error: ${err.message}</p>`;

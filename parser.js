@@ -13,22 +13,18 @@ function parseDSL(dsl) {
     const composites    = [];
     const edges         = [];
 
-    // -------------------------
-    // Default colors
-    // -------------------------
-    let entityColor       = "#AED6F1";   // light blue
-    let weakEntityColor   = "#D6EAF8";   // lighter blue
-    let relationshipColor = "#FFE4B5";   // light orange/yellow
+    // ── Default colors ─────────────────────────────────────────────────
+    let entityColor       = "#AED6F1";
+    let weakEntityColor   = "#D6EAF8";
+    let relationshipColor = "#FFE4B5";
 
-    // -------------------------
-    // Parse DSL
-    // -------------------------
+    // ── Parse DSL ──────────────────────────────────────────────────────
     for (const line of lines) {
         if (line.startsWith("#") || line === "") continue;
 
         let m;
 
-        // Color config
+        // Color overrides
         if (m = line.match(/^entities\s*:\s*(#[0-9A-Fa-f]{3,6})$/))      { entityColor       = m[1]; continue; }
         if (m = line.match(/^weak_entities\s*:\s*(#[0-9A-Fa-f]{3,6})$/)) { weakEntityColor   = m[1]; continue; }
         if (m = line.match(/^relationships\s*:\s*(#[0-9A-Fa-f]{3,6})$/)) { relationshipColor = m[1]; continue; }
@@ -45,52 +41,60 @@ function parseDSL(dsl) {
         // Composite attributes
         else if (m = line.match(/^composite\s+(\w+)\s+(\w+)\s*{(.+)}$/))
             composites.push({ owner: m[1], name: m[2], parts: m[3].split(",").map(p => p.trim()) });
-        // Relationship edges  (e.g.  Enrolls Student (1) TOTAL -- (N) PARTIAL Course)
+        // Relationship–entity edges
         else if (m = line.match(/^(\w+)\s+(\w+)\s+\((1|N|M)\)\s+(TOTAL|PARTIAL)\s+--\s+\((1|N|M)\)\s+(TOTAL|PARTIAL)\s+(\w+)$/))
             edges.push({ rel: m[1], from: m[2], fromCard: m[3], fromPart: m[4], toCard: m[5], toPart: m[6], to: m[7] });
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────
     // DOT generation
     //
-    // Engine: fdp  (force-directed placement)
-    //   • K controls the ideal spring distance between unconnected nodes
-    //   • overlap=false runs the Prism/VPSC algorithm to remove overlaps
-    //     without uniformly scaling the whole graph (unlike overlap=scale)
-    //   • sep adds an extra safety margin around each node for the
-    //     overlap-removal step
-    //   • Edges use `weight` to pull attributes close to their owners and
-    //     keep relationship diamonds near their entity boxes
-    // ─────────────────────────────────────────────────────────────────
+    // Engine: sfdp  (Scalable Force-Directed Placement)
+    //   Designed for large graphs.  Uses a multi-level coarsening
+    //   approach that produces much more compact layouts than plain fdp
+    //   when there are 100+ nodes.
+    //
+    // Key parameters:
+    //   K              – ideal spring length (lower = tighter)
+    //   repulsiveforce – node repulsion multiplier (lower = denser)
+    //   overlap=prism  – removes overlaps via the Prism algorithm
+    //                    without uniformly stretching the whole canvas
+    //   sep            – extra safety margin for overlap removal
+    //
+    // Edge weight strategy:
+    //   Attribute ↔ owner     weight=20   (tight orbit around entity)
+    //   Composite sub-attr    weight=25   (even tighter)
+    //   Rel ↔ entity          weight=2    (loose, entities spread naturally)
+    // ──────────────────────────────────────────────────────────────────
     let dot = `graph ER {
-  layout=fdp;
-  K=2.2;
-  overlap=false;
-  sep="+14";
+  layout=sfdp;
+  K=0.7;
+  repulsiveforce=0.85;
+  overlap=prism;
+  overlap_scaling=-2;
+  sep="+6";
   splines=true;
-  nodesep=0.5;
 
-  node [fontname="Helvetica", fontsize=11];
-  edge [fontname="Helvetica", fontsize=10];
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
 `;
 
-    // ── Entities ──────────────────────────────────────────────────────
+    // ── Entities ───────────────────────────────────────────────────────
     for (const [name, e] of Object.entries(entities)) {
         const periph    = e.weak ? ", peripheries=2" : "";
         const fillColor = e.weak ? weakEntityColor : entityColor;
         dot += `  ${name} [shape=rectangle${periph}, style=filled, fillcolor="${fillColor}", ` +
-               `margin="0.25,0.12", width=1.4, height=0.55];\n`;
+               `margin="0.2,0.1", width=1.3, height=0.5];\n`;
     }
 
-    // ── Relationships ─────────────────────────────────────────────────
+    // ── Relationships ──────────────────────────────────────────────────
     for (const [name, r] of Object.entries(relationships)) {
         const periph = r.identifying ? ", peripheries=2" : "";
         dot += `  ${name} [shape=diamond${periph}, style=filled, fillcolor="${relationshipColor}", ` +
-               `margin="0.3,0.15", width=1.5, height=0.9];\n`;
+               `margin="0.25,0.12", width=1.4, height=0.85];\n`;
     }
 
-    // ── Attributes ────────────────────────────────────────────────────
-    // High edge weight keeps attribute satellites tightly orbiting their owner.
+    // ── Attributes ─────────────────────────────────────────────────────
     for (const a of attributes) {
         const extra = [];
         if (a.type === "MULTI")   extra.push("peripheries=2");
@@ -100,28 +104,32 @@ function parseDSL(dsl) {
         const nodeId   = `${a.owner}_${a.name}`;
         const extraStr = extra.length ? `, ${extra.join(",")}` : "";
 
-        dot += `  ${nodeId} [shape=ellipse, label=${label}, width=0.85, height=0.45, margin="0.08,0.04"${extraStr}];\n`;
-        dot += `  ${a.owner} -- ${nodeId} [weight=8, style=solid];\n`;
+        dot += `  ${nodeId} [shape=ellipse, label=${label}, ` +
+               `width=0.75, height=0.4, margin="0.06,0.03"${extraStr}];\n`;
+        // High weight keeps the attribute tightly orbiting its entity
+        dot += `  ${a.owner} -- ${nodeId} [weight=20];\n`;
     }
 
-    // ── Composite attributes ──────────────────────────────────────────
+    // ── Composite attributes ───────────────────────────────────────────
     for (const c of composites) {
         const rootId = `${c.owner}_${c.name}`;
-        dot += `  ${rootId} [shape=ellipse, label="${c.name}", width=0.85, height=0.45, margin="0.08,0.04"];\n`;
-        dot += `  ${c.owner} -- ${rootId} [weight=8, style=solid];\n`;
+        dot += `  ${rootId} [shape=ellipse, label="${c.name}", ` +
+               `width=0.75, height=0.4, margin="0.06,0.03"];\n`;
+        dot += `  ${c.owner} -- ${rootId} [weight=20];\n`;
         for (const p of c.parts) {
             const partId = `${rootId}_${p}`;
-            dot += `  ${partId} [shape=ellipse, label="${p}", width=0.8, height=0.4, margin="0.06,0.03"];\n`;
-            dot += `  ${rootId} -- ${partId} [weight=12, style=solid];\n`;
+            dot += `  ${partId} [shape=ellipse, label="${p}", ` +
+                   `width=0.7, height=0.35, margin="0.05,0.03"];\n`;
+            dot += `  ${rootId} -- ${partId} [weight=25];\n`;
         }
     }
 
-    // ── Relationship–entity connections ───────────────────────────────
+    // ── Relationship–entity connections ────────────────────────────────
     for (const e of edges) {
         const fromPen = e.fromPart === "TOTAL" ? 2.5 : 1;
         const toPen   = e.toPart   === "TOTAL" ? 2.5 : 1;
-        dot += `  ${e.rel} -- ${e.from} [label="${e.fromCard}", penwidth=${fromPen}, weight=3];\n`;
-        dot += `  ${e.rel} -- ${e.to}   [label="${e.toCard}",   penwidth=${toPen},   weight=3];\n`;
+        dot += `  ${e.rel} -- ${e.from} [label="${e.fromCard}", penwidth=${fromPen}, weight=2];\n`;
+        dot += `  ${e.rel} -- ${e.to}   [label="${e.toCard}",   penwidth=${toPen},   weight=2];\n`;
     }
 
     dot += "}";
